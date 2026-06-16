@@ -41,11 +41,18 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=700968532693-ha2bq7cmhad8er8cn8u1n921lmesas2o.apps.
 
 After Vercel provides the frontend domain:
 
-1. Add that exact URL to Railway as `AllowedOrigins__1`.
+1. Add that exact URL to Railway as `AllowedOrigins__1` if you use a custom domain.
 2. Add the URL to Google OAuth **Authorized JavaScript origins**.
 3. Redeploy Railway after changing its variables.
 
 Do not include a trailing slash in any origin or API URL.
+
+The deployment uses the Next.js static export in `frontend/out`, so you do not
+need to set a manual Output Directory such as `public` in the Vercel project.
+
+The backend now accepts `localhost`, `127.0.0.1`, and `*.vercel.app` origins by
+rule, so preview deployments and local development do not depend on a separate
+`AllowedOrigins` entry for every Vercel URL.
 
 ## Build
 

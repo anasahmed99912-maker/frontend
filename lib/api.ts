@@ -27,7 +27,7 @@ async function apiFetch<T>(
     });
   } catch {
     throw new Error(
-      `Could not reach the API at ${API_BASE_URL}. Check the backend URL and its AllowedOrigins configuration.`
+      `The browser could not read the API response from ${API_BASE_URL}. Check that the backend is online and allows this frontend origin.`
     );
   }
 

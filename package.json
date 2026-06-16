@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "node scripts/clean-build-artifacts.mjs && next dev",
+    "build": "node scripts/clean-build-artifacts.mjs && next build && node scripts/postbuild-copy-assets.mjs",
+    "start": "node scripts/clean-build-artifacts.mjs && next build && next start"
   },
   "dependencies": {
     "@microsoft/signalr": "^10.0.0",
