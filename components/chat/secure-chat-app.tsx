@@ -16,8 +16,8 @@ import {
   listConversations,
   listMessages,
   loginUser,
-  lookupUser,
   registerUser,
+  searchUsers,
   signInWithGoogle
 } from "@/lib/api";
 import { decryptMessage, deriveConversationKey, encryptAttachment, encryptText, loadOrCreateIdentity } from "@/lib/crypto";
@@ -51,6 +51,7 @@ function SecureChatAppInner() {
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [recipientUserName, setRecipientUserName] = useState("");
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [previewUser, setPreviewUser] = useState<UserProfile | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
@@ -171,17 +172,26 @@ function SecureChatAppInner() {
   }, [auth, selectedConversationId]);
 
   useEffect(() => {
-    if (!auth || deferredRecipientUserName.length < 3) {
+    if (!auth || deferredRecipientUserName.length < 2) {
+      setSearchResults([]);
       setPreviewUser(null);
       return;
     }
 
     const timeout = window.setTimeout(() => {
-      void lookupUser(auth.token, deferredRecipientUserName)
-        .then((user) => {
-          setPreviewUser(user.userName === currentUserRef.current?.userName ? null : user);
+      void searchUsers(auth.token, deferredRecipientUserName)
+        .then((users) => {
+          const nextResults = users.filter(
+            (user) => user.userName !== currentUserRef.current?.userName
+          );
+
+          setSearchResults(nextResults);
+          setPreviewUser((existing) =>
+            nextResults.find((user) => user.id === existing?.id) ?? nextResults[0] ?? null
+          );
         })
         .catch(() => {
+          setSearchResults([]);
           setPreviewUser(null);
         });
     }, 280);
@@ -342,6 +352,7 @@ function SecureChatAppInner() {
       );
       setSelectedConversationId(createdConversation.id);
       setRecipientUserName("");
+      setSearchResults([]);
       setPreviewUser(null);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create conversation.");
@@ -470,9 +481,11 @@ function SecureChatAppInner() {
           onCreateConversation={handleCreateConversation}
           onLogout={handleLogout}
           onRecipientUserNameChange={setRecipientUserName}
+          onSelectPreviewUser={setPreviewUser}
           onSelectConversation={setSelectedConversationId}
           previewUser={previewUser}
           recipientUserName={recipientUserName}
+          searchResults={searchResults}
           selectedConversationId={selectedConversationId}
         />
 

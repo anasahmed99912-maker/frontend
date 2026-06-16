@@ -114,6 +114,10 @@ export async function lookupUser(token: string, userName: string) {
   return apiFetch<UserProfile>(`/api/users/${encodeURIComponent(userName)}`, {}, token);
 }
 
+export async function searchUsers(token: string, query: string) {
+  return apiFetch<UserProfile[]>(`/api/users?query=${encodeURIComponent(query)}`, {}, token);
+}
+
 export function getApiBaseUrl() {
   return API_BASE_URL;
 }

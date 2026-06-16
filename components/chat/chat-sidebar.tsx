@@ -8,8 +8,10 @@ type ChatSidebarProps = {
   conversations: Conversation[];
   currentUser: UserProfile;
   previewUser: UserProfile | null;
+  searchResults: UserProfile[];
   recipientUserName: string;
   onRecipientUserNameChange: (value: string) => void;
+  onSelectPreviewUser: (user: UserProfile) => void;
   onCreateConversation: () => void;
   isCreatingConversation: boolean;
   selectedConversationId: string | null;
@@ -21,8 +23,10 @@ export function ChatSidebar({
   conversations,
   currentUser,
   previewUser,
+  searchResults,
   recipientUserName,
   onRecipientUserNameChange,
+  onSelectPreviewUser,
   onCreateConversation,
   isCreatingConversation,
   selectedConversationId,
@@ -69,37 +73,69 @@ export function ChatSidebar({
           <input
             className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
             onChange={(event) => onRecipientUserNameChange(event.target.value)}
-            placeholder="Find user by username"
+            placeholder="Search by username, name, or email"
             value={recipientUserName}
           />
         </div>
 
-        {previewUser ? (
-          <div className="mt-4 rounded-[1.4rem] border border-[var(--accent)]/25 bg-[var(--accent-soft)] p-4">
-            <div className="flex items-center gap-3">
-              <img
-                alt={previewUser.displayName}
-                className="h-11 w-11 rounded-2xl object-cover"
-                src={previewUser.avatarUrl || `https://ui-avatars.com/api/?name=${previewUser.displayName}&background=f97360&color=fff`}
-              />
-              <div>
-                <p className="font-semibold text-white">{previewUser.displayName}</p>
-                <p className="text-sm text-slate-200">@{previewUser.userName}</p>
-              </div>
-            </div>
-            <button
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
-              disabled={isCreatingConversation}
-              onClick={onCreateConversation}
-              type="button"
-            >
-              {isCreatingConversation ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              Start secure thread
-            </button>
+        {recipientUserName.trim().length >= 2 ? (
+          <div className="mt-4 space-y-3">
+            {searchResults.length > 0 ? (
+              <>
+                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {searchResults.map((user) => {
+                    const isSelected = previewUser?.id === user.id;
+
+                    return (
+                      <button
+                        key={user.id}
+                        className={clsx(
+                          "flex w-full items-center gap-3 rounded-[1.2rem] border px-3 py-3 text-left transition",
+                          isSelected
+                            ? "border-[var(--accent)]/40 bg-[var(--accent-soft)]"
+                            : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                        )}
+                        onClick={() => onSelectPreviewUser(user)}
+                        type="button"
+                      >
+                        <img
+                          alt={user.displayName}
+                          className="h-11 w-11 rounded-2xl object-cover"
+                          src={user.avatarUrl || `https://ui-avatars.com/api/?name=${user.displayName}&background=f97360&color=fff`}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-white">{user.displayName}</p>
+                          <p className="truncate text-sm text-slate-200">@{user.userName}</p>
+                          {user.email ? (
+                            <p className="truncate text-xs text-slate-400">{user.email}</p>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {previewUser ? (
+                  <button
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-60"
+                    disabled={isCreatingConversation}
+                    onClick={onCreateConversation}
+                    type="button"
+                  >
+                    {isCreatingConversation ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Start secure thread
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <p className="rounded-[1.2rem] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-400">
+                No users matched that search.
+              </p>
+            )}
           </div>
         ) : null}
       </div>
