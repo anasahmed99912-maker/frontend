@@ -21,7 +21,15 @@ import {
   signInWithGoogle
 } from "@/lib/api";
 import { decryptMessage, deriveConversationKey, encryptAttachment, encryptText, loadOrCreateIdentity } from "@/lib/crypto";
-import { clearSession, loadSession, saveIdentity, saveSession } from "@/lib/storage";
+import {
+  clearSelectedConversationId,
+  clearSession,
+  loadSelectedConversationId,
+  loadSession,
+  saveIdentity,
+  saveSelectedConversationId,
+  saveSession
+} from "@/lib/storage";
 import type { AuthResponse, Conversation, DecryptedMessage, EncryptedMessage, UserProfile } from "@/lib/types";
 import { AuthPanel, type PasswordAuthRequest } from "@/components/auth/auth-panel";
 import { ChatConversationView } from "@/components/chat/chat-conversation-view";
@@ -53,9 +61,13 @@ function SecureChatAppInner() {
   const [recipientUserName, setRecipientUserName] = useState("");
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [previewUser, setPreviewUser] = useState<UserProfile | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isUpdatingMessage, setIsUpdatingMessage] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const deferredRecipientUserName = useDeferredValue(recipientUserName.trim());
@@ -69,6 +81,7 @@ function SecureChatAppInner() {
     }
 
     setAuth(storedSession);
+    setSelectedConversationId(loadSelectedConversationId(storedSession.user.userName));
     void getCurrentUser(storedSession.token)
       .then(setCurrentUser)
       .catch(() => {
@@ -135,6 +148,42 @@ function SecureChatAppInner() {
       );
     });
 
+    connection.on("ReceiveEncryptedMessageUpdated", async (message: EncryptedMessage) => {
+      const conversation = conversationsRef.current.find(
+        (item) => item.id === message.conversationId
+      );
+
+      if (!conversation || !currentUserRef.current) {
+        return;
+      }
+
+      try {
+        const decrypted = await decryptIncomingMessage(
+          conversation,
+          currentUserRef.current,
+          message
+        );
+
+        setMessages((existing) =>
+          message.conversationId === selectedConversationRef.current
+            ? upsertMessage(existing, decrypted)
+            : existing
+        );
+      } catch {
+        setError("A message update could not be decrypted with this device key.");
+      }
+    });
+
+    connection.on("ReceiveEncryptedMessageDeleted", (payload: { conversationId: string; messageId: string }) => {
+      if (payload.conversationId !== selectedConversationRef.current) {
+        return;
+      }
+
+      setMessages((existing) =>
+        existing.filter((message) => message.id !== payload.messageId)
+      );
+    });
+
     void connection
       .start()
       .then(() => {
@@ -159,6 +208,8 @@ function SecureChatAppInner() {
   useEffect(() => {
     if (!auth || !selectedConversationId) {
       setMessages([]);
+      setEditingMessageId(null);
+      setEditingDraft("");
       return;
     }
 
@@ -214,6 +265,21 @@ function SecureChatAppInner() {
   useEffect(() => {
     selectedConversationRef.current = selectedConversationId;
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    const owner = currentUser?.userName ?? auth?.user.userName;
+
+    if (!owner) {
+      return;
+    }
+
+    if (selectedConversationId) {
+      saveSelectedConversationId(owner, selectedConversationId);
+      return;
+    }
+
+    clearSelectedConversationId(owner);
+  }, [auth, currentUser, selectedConversationId]);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
@@ -283,6 +349,7 @@ function SecureChatAppInner() {
   async function completeAuthentication(authResponse: AuthResponse) {
     saveSession(authResponse);
     setAuth(authResponse);
+    setSelectedConversationId(loadSelectedConversationId(authResponse.user.userName));
     setCurrentUser(await getCurrentUser(authResponse.token));
   }
 
@@ -290,10 +357,21 @@ function SecureChatAppInner() {
     try {
       const nextConversations = (await listConversations(token)).sort(sortConversations);
       setConversations(nextConversations);
+      const persistedConversationId = loadSelectedConversationId(
+        currentUserRef.current?.userName ?? auth?.user.userName ?? ""
+      );
+      const nextSelectedConversationId =
+        selectedConversationRef.current && nextConversations.some(
+          (conversation) => conversation.id === selectedConversationRef.current
+        )
+          ? selectedConversationRef.current
+          : persistedConversationId && nextConversations.some(
+              (conversation) => conversation.id === persistedConversationId
+            )
+              ? persistedConversationId
+              : nextConversations[0]?.id ?? null;
 
-      if (!selectedConversationRef.current && nextConversations[0]) {
-        setSelectedConversationId(nextConversations[0].id);
-      }
+      setSelectedConversationId(nextSelectedConversationId);
     } catch (conversationError) {
       setError(
         conversationError instanceof Error
@@ -322,7 +400,8 @@ function SecureChatAppInner() {
             conversationId: message.conversationId,
             senderUserId: message.senderUserId,
             text: "[This message cannot be decrypted with the current device key.]",
-            sentAtUtc: message.sentAtUtc
+            sentAtUtc: message.sentAtUtc,
+            updatedAtUtc: message.updatedAtUtc
           }))
         )
       );
@@ -416,13 +495,119 @@ function SecureChatAppInner() {
     }
   }
 
+  function handleStartEditingMessage(message: DecryptedMessage) {
+    setEditingMessageId(message.id);
+    setEditingDraft(message.text);
+  }
+
+  function handleCancelEditingMessage() {
+    setEditingMessageId(null);
+    setEditingDraft("");
+  }
+
+  async function handleSaveEditingMessage() {
+    if (!auth || !currentUser || !selectedConversation || !editingMessageId) {
+      return;
+    }
+
+    const existingMessage = messages.find((message) => message.id === editingMessageId);
+
+    if (!existingMessage) {
+      return;
+    }
+
+    if (!editingDraft.trim() && !existingMessage.attachmentUrl) {
+      setError("Messages without attachments cannot be empty.");
+      return;
+    }
+
+    const recipient = selectedConversation.participants.find(
+      (participant) => participant.id !== currentUser.id
+    );
+
+    if (!recipient) {
+      return;
+    }
+
+    setIsUpdatingMessage(true);
+    setError(null);
+
+    try {
+      const identity = await loadOrCreateIdentity(currentUser.userName);
+      const key = await deriveConversationKey(identity, recipient.identityPublicKeyJwk);
+      const textPayload = await encryptText(key, editingDraft.trim());
+      const hub = hubConnectionRef.current;
+
+      if (!hub || hub.state !== HubConnectionState.Connected) {
+        throw new Error("Realtime connection is not ready yet.");
+      }
+
+      await hub.invoke("UpdateEncryptedMessage", {
+        messageId: editingMessageId,
+        conversationId: selectedConversation.id,
+        ciphertextBase64: textPayload.ciphertextBase64,
+        ivBase64: textPayload.ivBase64,
+        encryptionAlgorithm: "AES-256-GCM",
+        preserveAttachment: Boolean(existingMessage.attachmentUrl),
+        attachment: null
+      });
+
+      setEditingMessageId(null);
+      setEditingDraft("");
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Failed to update message.");
+    } finally {
+      setIsUpdatingMessage(false);
+    }
+  }
+
+  async function handleDeleteMessage(message: DecryptedMessage) {
+    if (!auth || !selectedConversation) {
+      return;
+    }
+
+    const hub = hubConnectionRef.current;
+
+    if (!hub || hub.state !== HubConnectionState.Connected) {
+      setError("Realtime connection is not ready yet.");
+      return;
+    }
+
+    setDeletingMessageId(message.id);
+    setError(null);
+
+    try {
+      await hub.invoke("DeleteEncryptedMessage", {
+        messageId: message.id,
+        conversationId: selectedConversation.id
+      });
+
+      if (editingMessageId === message.id) {
+        setEditingMessageId(null);
+        setEditingDraft("");
+      }
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete message.");
+    } finally {
+      setDeletingMessageId(null);
+    }
+  }
+
   function handleLogout() {
+    const owner = currentUser?.userName ?? auth?.user.userName;
+
+    if (owner) {
+      clearSelectedConversationId(owner);
+    }
+
     clearSession();
     setAuth(null);
     setCurrentUser(null);
     setConversations([]);
     setSelectedConversationId(null);
     setMessages([]);
+    setEditingMessageId(null);
+    setEditingDraft("");
   }
 
   if (!auth || !currentUser) {
@@ -494,12 +679,21 @@ function SecureChatAppInner() {
             attachment={attachment}
             conversation={selectedConversation}
             currentUser={currentUser}
+            deletingMessageId={deletingMessageId}
             draft={draft}
+            editingDraft={editingDraft}
+            editingMessageId={editingMessageId}
+            isUpdatingMessage={isUpdatingMessage}
             isSendingMessage={isSendingMessage}
             messages={messages}
             onAttachmentChange={setAttachment}
+            onCancelEditingMessage={handleCancelEditingMessage}
+            onDeleteMessage={handleDeleteMessage}
             onDraftChange={setDraft}
+            onEditingDraftChange={setEditingDraft}
             onSendMessage={handleSendMessage}
+            onSaveEditingMessage={handleSaveEditingMessage}
+            onStartEditingMessage={handleStartEditingMessage}
           />
 
           {isLoadingMessages ? (

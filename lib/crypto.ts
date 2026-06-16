@@ -162,6 +162,7 @@ export async function decryptMessage(
     senderUserId: message.senderUserId,
     text,
     sentAtUtc: message.sentAtUtc,
+    updatedAtUtc: message.updatedAtUtc,
     attachmentUrl,
     attachmentName,
     attachmentMimeType

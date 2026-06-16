@@ -40,6 +40,7 @@ export type EncryptedMessage = {
   clientMessageId?: string | null;
   attachment?: EncryptedAttachment | null;
   sentAtUtc: string;
+  updatedAtUtc?: string | null;
 };
 
 export type DecryptedMessage = {
@@ -48,6 +49,7 @@ export type DecryptedMessage = {
   senderUserId: string;
   text: string;
   sentAtUtc: string;
+  updatedAtUtc?: string | null;
   attachmentUrl?: string;
   attachmentName?: string;
   attachmentMimeType?: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, LoaderCircle, Lock, SendHorizontal } from "lucide-react";
+import { Check, ImagePlus, LoaderCircle, Lock, Pencil, SendHorizontal, Trash2, X } from "lucide-react";
 import type { Conversation, DecryptedMessage, UserProfile } from "@/lib/types";
 
 type ChatConversationViewProps = {
@@ -13,6 +13,15 @@ type ChatConversationViewProps = {
   attachment: File | null;
   onSendMessage: () => void;
   isSendingMessage: boolean;
+  editingMessageId: string | null;
+  editingDraft: string;
+  onEditingDraftChange: (value: string) => void;
+  onStartEditingMessage: (message: DecryptedMessage) => void;
+  onCancelEditingMessage: () => void;
+  onSaveEditingMessage: () => void;
+  onDeleteMessage: (message: DecryptedMessage) => void;
+  isUpdatingMessage: boolean;
+  deletingMessageId: string | null;
 };
 
 export function ChatConversationView({
@@ -24,7 +33,16 @@ export function ChatConversationView({
   onAttachmentChange,
   attachment,
   onSendMessage,
-  isSendingMessage
+  isSendingMessage,
+  editingMessageId,
+  editingDraft,
+  onEditingDraftChange,
+  onStartEditingMessage,
+  onCancelEditingMessage,
+  onSaveEditingMessage,
+  onDeleteMessage,
+  isUpdatingMessage,
+  deletingMessageId
 }: ChatConversationViewProps) {
   const counterpart = conversation?.participants.find(
     (participant) => participant.id !== currentUser.id
@@ -70,6 +88,8 @@ export function ChatConversationView({
       <div className="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-5 py-6 md:px-7">
         {messages.map((message) => {
           const isCurrentUser = message.senderUserId === currentUser.id;
+          const isEditing = editingMessageId === message.id;
+          const isDeleting = deletingMessageId === message.id;
 
           return (
             <article
@@ -79,11 +99,44 @@ export function ChatConversationView({
               <div
                 className={`max-w-[82%] rounded-[1.8rem] px-5 py-4 shadow-lg ${
                   isCurrentUser
-                  ? "bg-[var(--accent)] text-white"
+                    ? "bg-[var(--accent)] text-white"
                     : "border border-white/10 bg-white/[0.06] text-slate-100"
                 }`}
               >
-                {message.text ? <p className="whitespace-pre-wrap text-[15px] leading-7">{message.text}</p> : null}
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <textarea
+                      className="min-h-24 w-full resize-none rounded-[1.2rem] border border-white/15 bg-black/15 px-3 py-2 text-[15px] leading-7 text-white outline-none"
+                      onChange={(event) => onEditingDraftChange(event.target.value)}
+                      value={editingDraft}
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-2 text-sm text-white/90 transition hover:bg-white/10"
+                        onClick={onCancelEditingMessage}
+                        type="button"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancel
+                      </button>
+                      <button
+                        className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/20 disabled:opacity-60"
+                        disabled={isUpdatingMessage}
+                        onClick={onSaveEditingMessage}
+                        type="button"
+                      >
+                        {isUpdatingMessage ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4" />
+                        )}
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : message.text ? (
+                  <p className="whitespace-pre-wrap text-[15px] leading-7">{message.text}</p>
+                ) : null}
 
                 {message.attachmentUrl && message.attachmentMimeType?.startsWith("image/") ? (
                   <a
@@ -110,12 +163,39 @@ export function ChatConversationView({
                   </a>
                 ) : null}
 
-                <p className={`mt-3 text-xs ${isCurrentUser ? "text-white/80" : "text-slate-400"}`}>
-                  {new Date(message.sentAtUtc).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit"
-                  })}
-                </p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className={`text-xs ${isCurrentUser ? "text-white/80" : "text-slate-400"}`}>
+                    {new Date(message.sentAtUtc).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    })}
+                    {message.updatedAtUtc ? "  edited" : ""}
+                  </p>
+
+                  {isCurrentUser && !isEditing ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="inline-flex items-center justify-center rounded-full border border-white/15 p-2 text-white/80 transition hover:bg-white/10"
+                        onClick={() => onStartEditingMessage(message)}
+                        type="button"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center rounded-full border border-white/15 p-2 text-white/80 transition hover:bg-white/10 disabled:opacity-60"
+                        disabled={isDeleting}
+                        onClick={() => onDeleteMessage(message)}
+                        type="button"
+                      >
+                        {isDeleting ? (
+                          <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </article>
           );
