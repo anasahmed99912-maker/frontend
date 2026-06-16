@@ -206,23 +206,6 @@ function SecureChatAppInner() {
   }, [auth]);
 
   useEffect(() => {
-    if (!auth || !selectedConversationId) {
-      setMessages([]);
-      setEditingMessageId(null);
-      setEditingDraft("");
-      return;
-    }
-
-    const hub = hubConnectionRef.current;
-
-    if (hub && hub.state === HubConnectionState.Connected) {
-      void hub.invoke("JoinConversation", selectedConversationId).catch(() => undefined);
-    }
-
-    void loadConversationMessages(auth.token, selectedConversationId);
-  }, [auth, selectedConversationId]);
-
-  useEffect(() => {
     if (!auth || deferredRecipientUserName.length < 2) {
       setSearchResults([]);
       setPreviewUser(null);
@@ -285,6 +268,27 @@ function SecureChatAppInner() {
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId]
   );
+
+  useEffect(() => {
+    if (!auth || !selectedConversationId) {
+      setMessages([]);
+      setEditingMessageId(null);
+      setEditingDraft("");
+      return;
+    }
+
+    if (!currentUser || !selectedConversation) {
+      return;
+    }
+
+    const hub = hubConnectionRef.current;
+
+    if (hub && hub.state === HubConnectionState.Connected) {
+      void hub.invoke("JoinConversation", selectedConversationId).catch(() => undefined);
+    }
+
+    void loadConversationMessages(auth.token, selectedConversationId);
+  }, [auth, currentUser, selectedConversation, selectedConversationId]);
 
   async function handleGoogleSuccess(credentialResponse: CredentialResponse) {
     if (!credentialResponse.credential) {

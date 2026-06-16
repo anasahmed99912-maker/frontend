@@ -4,10 +4,16 @@ const SESSION_KEY = "cipherline.session.v1";
 const LEGACY_IDENTITY_KEY = "cipherline.identity.v1";
 const IDENTITY_KEY_PREFIX = "cipherline.identity.v2.";
 const SELECTED_CONVERSATION_KEY_PREFIX = "cipherline.selected-conversation.v1.";
+const SELECTED_CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type StoredIdentity = {
   publicJwk: JsonWebKey;
   privateJwk: JsonWebKey;
+};
+
+type StoredConversationSelection = {
+  conversationId: string;
+  expiresAtUtc: string;
 };
 
 export function loadSession(): AuthResponse | null {
@@ -68,7 +74,30 @@ export function loadSelectedConversationId(owner: string): string | null {
     return null;
   }
 
-  return window.localStorage.getItem(getSelectedConversationKey(owner));
+  const raw = window.localStorage.getItem(getSelectedConversationKey(owner));
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredConversationSelection;
+
+    if (!parsed.conversationId || !parsed.expiresAtUtc) {
+      window.localStorage.removeItem(getSelectedConversationKey(owner));
+      return null;
+    }
+
+    if (Date.parse(parsed.expiresAtUtc) <= Date.now()) {
+      window.localStorage.removeItem(getSelectedConversationKey(owner));
+      return null;
+    }
+
+    return parsed.conversationId;
+  } catch {
+    window.localStorage.removeItem(getSelectedConversationKey(owner));
+    return null;
+  }
 }
 
 export function saveSelectedConversationId(owner: string, conversationId: string) {
@@ -76,7 +105,12 @@ export function saveSelectedConversationId(owner: string, conversationId: string
     return;
   }
 
-  window.localStorage.setItem(getSelectedConversationKey(owner), conversationId);
+  const value: StoredConversationSelection = {
+    conversationId,
+    expiresAtUtc: new Date(Date.now() + SELECTED_CONVERSATION_TTL_MS).toISOString()
+  };
+
+  window.localStorage.setItem(getSelectedConversationKey(owner), JSON.stringify(value));
 }
 
 export function clearSelectedConversationId(owner: string) {
